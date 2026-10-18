@@ -533,6 +533,18 @@ const TOOL_ALIASES = {
   "grep": "Grep",
   "fetch": "WebFetch",
   "agent": "Agent",
+  // OpenCode V2 built-in tool names (sst/opencode 2.x: packages/core/src/
+  // tool/plugin/*). V2 renamed several tools; routing branches on Bash/
+  // Read/Grep/WebFetch/Agent, so "webfetch" and "subagent" are the
+  // behavior-changing entries, the rest keep canonical normalization.
+  // NOTE: do NOT map "execute" (the Code Mode sandbox runner) - passthrough
+  // is correct for it.
+  "webfetch": "WebFetch",
+  "subagent": "Agent",
+  "write": "Write",
+  "patch": "Edit",
+  "websearch": "WebSearch",
+  "question": "AskUserQuestion",
   // Codex CLI
   "shell": "Bash",
   "shell_command": "Bash",

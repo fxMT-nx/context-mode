@@ -485,6 +485,17 @@ Full configs: [`configs/cursor/hooks.json`](configs/cursor/hooks.json) | [`confi
 
    The `plugin` entry registers all 11 `ctx_*` tools natively and enables hooks — OpenCode calls context-mode's TypeScript plugin in-process, so there is no redundant stdio MCP child per session.
 
+   > **OpenCode 2.x:** V2 uses the `plugins` key (plural) — same package entry, the plugin's default export adapts to the host API:
+   >
+   > ```json
+   > {
+   >   "$schema": "https://opencode.ai/config.json",
+   >   "plugins": ["context-mode"]
+   > }
+   > ```
+   >
+   > On V2 the adapter registers the native `ctx_*` tools via `ctx.tool.transform`, maps routing enforcement onto `ctx.tool.hook("execute.before" / "execute.after")`, maps session continuity onto `ctx.session.hook("prompt" / "context" / "compaction")`, and reads usage/cost from V2's `session.usage.updated` events (cumulative totals, emitted as deltas). The `experimental.*` hook names below apply to V1 hosts only.
+
 2. *(Optional)* Copy the routing rules file. The model needs an `AGENTS.md` file for routing awareness:
 
    ```bash

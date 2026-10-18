@@ -754,7 +754,22 @@ async function createContextModePlugin(ctx: PluginContext) {
 // ── Exports ──────────────────────────────────────────────
 // KiloCode PluginModule: default export with { server } shape
 // OpenCode compat: named export for direct import("context-mode/plugin")
-export default { id:"context-mode", server: createContextModePlugin };
+export default {
+  id: "context-mode",
+  // V1 hosts (KiloCode, OpenCode 1.x): hooks factory (PluginModule shape).
+  server: createContextModePlugin,
+  /**
+   * OpenCode V2 (2.x) plugin API: the loader requires `{ id, setup }` and
+   * rejects modules without a `setup`/`effect` export. Wiring this lazily
+   * keeps the V2 adapter out of the V1 load path and avoids a static import
+   * cycle (v2.ts imports this module for the hooks factory).
+   */
+  setup: async (ctx: unknown) => {
+    const mod = await import("./v2.js");
+    type V2Setup = typeof mod.createContextModeV2Setup;
+    return mod.createContextModeV2Setup(ctx as Parameters<V2Setup>[0]);
+  },
+};
 export { createContextModePlugin as ContextModePlugin };
 // Test surface — exported for unit testing the quorum substring fix (#487).
 export { systemHasRoutingInstructions, ROUTING_MARKERS };

@@ -406,15 +406,17 @@ export class OpenCodeAdapter extends BaseAdapter implements HookAdapter {
       return results;
     }
 
-    // Check for "context-mode" in plugin array
+    // Check for "context-mode" in the plugin array (OpenCode 1.x `plugin`,
+    // OpenCode 2.x `plugins`)
     const hasPlugin = this.hasContextModePlugin(settings);
-    if (Array.isArray(settings.plugin)) {
+    const pluginKey = this.pluginArrayKey(settings);
+    if (Array.isArray(settings[pluginKey])) {
       results.push({
         check: "Plugin registration",
         status: hasPlugin ? "pass" : "fail",
         message: hasPlugin
-          ? "context-mode found in plugin array"
-          : "context-mode not found in plugin array",
+          ? `context-mode found in ${pluginKey} array`
+          : `context-mode not found in ${pluginKey} array`,
         fix: hasPlugin
           ? undefined
           : "context-mode upgrade",
@@ -499,16 +501,18 @@ export class OpenCodeAdapter extends BaseAdapter implements HookAdapter {
     const settings = this.readSettings() ?? {};
     const changes: string[] = [];
 
-    // Add "context-mode" to the plugin array
-    const plugins = (settings.plugin ?? []) as string[];
+    // Add "context-mode" to the plugin array (existing key wins: OpenCode
+    // 2.x `plugins`, else OpenCode 1.x / KiloCode `plugin`)
+    const pluginKey = this.pluginArrayKey(settings);
+    const plugins = (settings[pluginKey] ?? []) as string[];
     if (!plugins.some((p) => p.includes("context-mode"))) {
       plugins.push("context-mode");
-      changes.push("Added context-mode to plugin array");
+      changes.push(`Added context-mode to ${pluginKey} array`);
     } else {
-      changes.push("context-mode already in plugin array");
+      changes.push(`context-mode already in ${pluginKey} array`);
     }
 
-    settings.plugin = plugins;
+    settings[pluginKey] = plugins;
 
     const mcp = settings.mcp;
     if (mcp && typeof mcp === "object" && !Array.isArray(mcp)) {
@@ -556,10 +560,22 @@ export class OpenCodeAdapter extends BaseAdapter implements HookAdapter {
 
   /**
    * Check whether a settings object has the context-mode plugin registered.
+   * OpenCode 1.x (and KiloCode) uses the `plugin` key; OpenCode 2.x renamed
+   * it to `plugins` - accept either so the doctor passes on both hosts.
    */
   private hasContextModePlugin(settings: Record<string, unknown>): boolean {
-    const plugins = settings.plugin;
-    return Array.isArray(plugins) && plugins.some((p: unknown) => typeof p === "string" && p.includes("context-mode"));
+    const isRegistered = (value: unknown): boolean =>
+      Array.isArray(value) &&
+      value.some((p: unknown) => typeof p === "string" && p.includes("context-mode"));
+    return isRegistered(settings.plugin) || isRegistered(settings.plugins);
+  }
+
+  /**
+   * Plugin array key for the host generation: `plugins` when present
+   * (OpenCode 2.x), otherwise `plugin` (OpenCode 1.x / KiloCode).
+   */
+  private pluginArrayKey(settings: Record<string, unknown>): "plugin" | "plugins" {
+    return Array.isArray(settings.plugins) ? "plugins" : "plugin";
   }
 
   private hasLegacyContextModeMcp(settings: Record<string, unknown>): boolean {

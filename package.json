@@ -52,6 +52,7 @@
   "exports": {
     ".": "./build/adapters/opencode/plugin.js",
     "./plugin": "./build/adapters/opencode/plugin.js",
+    "./v2": "./build/adapters/opencode/v2.js",
     "./openclaw": "./build/adapters/openclaw/plugin.js",
     "./cli": "./cli.bundle.mjs"
   },

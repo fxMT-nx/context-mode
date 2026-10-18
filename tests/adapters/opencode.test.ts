@@ -299,6 +299,66 @@ describe("OpenCodeAdapter", () => {
       }
     });
 
+    it("validateHooks passes when context-mode is registered in the V2 `plugins` array", () => {
+      const root = mkdtempSync(join(tmpdir(), "opencode-adapter-v2-"));
+      const dir = join(root, "project");
+      const home = join(root, "home");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "opencode.json"), JSON.stringify({
+        plugins: ["context-mode"],
+      }, null, 2) + "\n");
+
+      const prevHome = process.env.HOME;
+      const prevUserProfile = process.env.USERPROFILE;
+      Object.assign(process.env, env(home));
+      const cwd = process.cwd();
+      process.chdir(dir);
+      try {
+        const results = new OpenCodeAdapter().validateHooks("/tmp/plugin");
+        expect(results).toContainEqual(expect.objectContaining({
+          check: "Plugin registration",
+          status: "pass",
+          message: "context-mode found in plugins array",
+        }));
+      } finally {
+        process.chdir(cwd);
+        if (prevHome !== undefined) process.env.HOME = prevHome;
+        else delete process.env.HOME;
+        if (prevUserProfile !== undefined) process.env.USERPROFILE = prevUserProfile;
+        else delete process.env.USERPROFILE;
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("configureAllHooks appends to the existing V2 `plugins` array", () => {
+      const root = mkdtempSync(join(tmpdir(), "opencode-adapter-v2-"));
+      const dir = join(root, "project");
+      const home = join(root, "home");
+      mkdirSync(dir, { recursive: true });
+      const configPath = join(dir, "opencode.json");
+      writeFileSync(configPath, JSON.stringify({ plugins: ["other-plugin"] }, null, 2) + "\n");
+
+      const prevHome = process.env.HOME;
+      const prevUserProfile = process.env.USERPROFILE;
+      Object.assign(process.env, env(home));
+      const cwd = process.cwd();
+      process.chdir(dir);
+      try {
+        const changes = new OpenCodeAdapter().configureAllHooks("/tmp/plugin");
+        expect(changes).toContain("Added context-mode to plugins array");
+        expect(JSON.parse(readFileSync(configPath, "utf-8"))).toEqual({
+          plugins: ["other-plugin", "context-mode"],
+        });
+      } finally {
+        process.chdir(cwd);
+        if (prevHome !== undefined) process.env.HOME = prevHome;
+        else delete process.env.HOME;
+        if (prevUserProfile !== undefined) process.env.USERPROFILE = prevUserProfile;
+        else delete process.env.USERPROFILE;
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
     it("readSettings prioritizes config with context-mode plugin", () => {
       const root = mkdtempSync(join(tmpdir(), "opencode-adapter-"));
       const dir = join(root, "project");

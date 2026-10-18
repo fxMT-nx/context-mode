@@ -152,6 +152,16 @@ context-mode hook gemini-cli sessionstart
 
 OpenCode uses a TypeScript plugin paradigm instead of JSON stdin/stdout. Hooks and the 11 `ctx_*` tools are registered via the `plugin` array in `opencode.json`; no separate `mcp` block or stdio MCP child is required.
 
+**OpenCode 2.x (V2):** V2 replaced the plugin API (`{ id, setup }`, hook domains on the plugin context). The package default export carries both shapes (`server` for V1/KiloCode, `setup` for V2); V2 users register it under the `plugins` key (plural). The V2 adapter (`src/adapters/opencode/v2.ts`) re-wires the same hooks factory onto:
+
+- `ctx.tool.transform` -- native `ctx_*` tools + JSON Schema inputs
+- `ctx.tool.hook("execute.before")` -- routing enforcement (`modify` rewrites args, `throw` denies the call)
+- `ctx.tool.hook("execute.after")` -- session event capture
+- `ctx.session.hook("prompt" / "context" / "compaction")` -- prompt capture, routing-block + resume injection, compaction snapshots
+- `ctx.event.subscribe` -- usage/cost capture; V2 emits `session.usage.updated` with cumulative totals, mapped to deltas
+
+V2's routing aliases (`webfetch` -> WebFetch, `subagent` -> Agent, plus normalization for `write`/`patch`/`websearch`/`question`) live in `hooks/core/routing.mjs`.
+
 **Hook Names:**
 - `tool.execute.before` -- equivalent to PreToolUse
 - `tool.execute.after` -- equivalent to PostToolUse
