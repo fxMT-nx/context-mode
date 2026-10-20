@@ -6,7 +6,12 @@ import {
   zod3ShapeToJsonSchema,
   zod3ObjectSchemaToJsonSchema,
 } from "../../src/adapters/opencode/zod3-to-json-schema.js";
-import { computeUsageDelta, ZERO_USAGE } from "../../src/adapters/opencode/v2.js";
+import {
+  computeUsageDelta,
+  ZERO_USAGE,
+  applyResultNudge,
+  NUDGE_TEXTS,
+} from "../../src/adapters/opencode/v2.js";
 import contextModePlugin from "../../src/adapters/opencode/plugin.js";
 import contextModeV2Plugin from "../../src/adapters/opencode/v2.js";
 
@@ -163,6 +168,60 @@ describe("computeUsageDelta", () => {
     const prev = { cost: 2, input: 200, output: 20, cacheRead: 100, cacheWrite: 10 };
     const total = { cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
     expect(computeUsageDelta(prev, total)).toEqual(ZERO_USAGE);
+  });
+});
+
+// ── result nudges ──────────────────────────────────────────────────────
+
+describe("applyResultNudge", () => {
+  it("covers the four built-in tools that have a ctx_* alternative", () => {
+    expect(Object.keys(NUDGE_TEXTS).sort()).toEqual(["glob", "grep", "read", "shell"]);
+  });
+
+  it("prepends a text part to array content (V2 native result shape)", () => {
+    const result = { content: [{ type: "text", text: "original output" }] };
+    expect(applyResultNudge("shell", result)).toBe(true);
+    expect(result.content).toHaveLength(2);
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toContain("[context-mode] Tip:");
+    expect(result.content[0].text).toContain("ctx_batch_execute");
+    // The real payload survives untouched.
+    expect(result.content[1]).toEqual({ type: "text", text: "original output" });
+  });
+
+  it("prepends to string content", () => {
+    const result: { content?: string | Array<{ type?: string; text?: string }> } = {
+      content: "original output",
+    };
+    expect(applyResultNudge("read", result)).toBe(true);
+    expect(result.content).toMatch(/^\[context-mode\] Tip:[\s\S]*original output$/);
+    expect(String(result.content)).toContain("ctx_execute_file");
+  });
+
+  it("prepends to a string output when content is empty", () => {
+    const result: { output?: unknown; content?: string | Array<{ type?: string; text?: string }> } = {
+      output: "original output",
+    };
+    expect(applyResultNudge("grep", result)).toBe(true);
+    expect(String(result.output)).toMatch(/^\[context-mode\] Tip:[\s\S]*original output$/);
+  });
+
+  it("creates a text part when the result has no payload yet", () => {
+    const result: { content?: string | Array<{ type?: string; text?: string }> } = {};
+    expect(applyResultNudge("glob", result)).toBe(true);
+    expect(Array.isArray(result.content)).toBe(true);
+    expect((result.content as Array<{ text?: string }>)[0].text).toContain("ctx_execute");
+  });
+
+  it("ignores tools without a nudge (ctx_* and any other tool)", () => {
+    const result = { content: [{ type: "text", text: "x" }] };
+    expect(applyResultNudge("ctx_execute", result)).toBe(false);
+    expect(applyResultNudge("write", result)).toBe(false);
+    expect(result.content).toEqual([{ type: "text", text: "x" }]);
+  });
+
+  it("ignores a missing result", () => {
+    expect(applyResultNudge("shell", undefined)).toBe(false);
   });
 });
 

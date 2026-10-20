@@ -162,6 +162,8 @@ OpenCode uses a TypeScript plugin paradigm instead of JSON stdin/stdout. Hooks a
 
 V2's routing aliases (`webfetch` -> WebFetch, `subagent` -> Agent, plus normalization for `write`/`patch`/`websearch`/`question`) live in `hooks/core/routing.mjs`.
 
+**Result nudges (V2-only channel):** the V1 adapter documented that OpenCode's PreToolUse cannot inject `additionalContext` ("context" decisions had to fall back to CLAUDE.md/AGENTS.md). V2 closes that gap: `execute.after` runs *before* the host finalizes a result, so the once-per-session guidance (shell -> `ctx_batch_execute`, read -> `ctx_execute_file`, grep/glob -> `ctx_execute`) is prepended to the tool result as a content text part. `CONTEXT_MODE_V2_NUDGES=0` opts out. Note: a throw inside `execute.after` *replaces* the tool result in V2, so the hook is fail-soft.
+
 **Hook Names:**
 - `tool.execute.before` -- equivalent to PreToolUse
 - `tool.execute.after` -- equivalent to PostToolUse

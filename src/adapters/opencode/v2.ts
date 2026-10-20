@@ -66,9 +66,15 @@ interface V2ToolExecuteBeforeEvent {
   input?: Record<string, unknown>;
 }
 
+interface V2ToolResult {
+  output?: unknown;
+  content?: string | Array<{ type?: string; text?: string }>;
+  metadata?: unknown;
+}
+
 interface V2ToolExecuteAfterEvent extends V2ToolExecuteBeforeEvent {
   status?: string;
-  result?: unknown;
+  result?: V2ToolResult;
   error?: unknown;
 }
 
@@ -149,6 +155,60 @@ function sameDir(a: unknown, b: unknown): boolean {
   );
 }
 
+// ── Result nudges: the guidance channel V1 could not deliver ───────────
+// OpenCode's V1 adapter gave up on routing nudges — its PreToolUse path
+// cannot inject additionalContext ("context" decisions fall back to
+// CLAUDE.md/AGENTS.md instructions, see adapters/opencode/index.ts).
+// V2 closes that gap: execute.after runs BEFORE the host finalizes the
+// result (the host reads event.result *after* the hooks — its own Plan
+// agent rewrites event.error the same way), so mutating the result here
+// reaches the model. Native tool results carry their display text as a
+// content PARTS ARRAY ([{type:"text", text}]) next to a structured `output`
+// object: prepend a part, never replace `content` (replacing it hides the
+// real tool output — verified live on 2.0.32).
+// Disable with CONTEXT_MODE_V2_NUDGES=0.
+
+/** One nudge per built-in tool, mirroring routing.mjs's guidanceOnce texts. */
+export const NUDGE_TEXTS: Record<string, string> = {
+  shell:
+    "for gathering (several reads/commands), prefer ctx_batch_execute — one call runs the batch, auto-indexes the output, and keeps raw bytes out of context",
+  read:
+    "to analyze or summarize a file (not to edit it), prefer ctx_execute_file — the raw bytes stay in the sandbox",
+  grep:
+    "for searching/extraction, prefer ctx_execute with a filter — only the answer enters context",
+  glob:
+    "to inspect directory trees, prefer ctx_execute — one script, only the summary enters context",
+};
+
+/**
+ * Prepend a routing nudge to a V2 tool result (mutates `result`).
+ * Returns true when a nudge was applied. Pure so it can be unit tested
+ * without the plugin host.
+ */
+export function applyResultNudge(tool: string, result: V2ToolResult | undefined): boolean {
+  if (!result || typeof result !== "object") return false;
+  const text = NUDGE_TEXTS[tool];
+  if (!text) return false;
+  const tip = `[context-mode] Tip: ${text}.`;
+  // Prepend so tail truncation can never eat the tip. Never change which
+  // field carries the payload: the host derives the final content from
+  // result.content ?? result.output.
+  if (Array.isArray(result.content)) {
+    result.content.unshift({ type: "text", text: tip });
+    return true;
+  }
+  if (typeof result.content === "string" && result.content.length > 0) {
+    result.content = `${tip}\n\n${result.content}`;
+    return true;
+  }
+  if (typeof result.output === "string" && result.output.length > 0) {
+    result.output = `${tip}\n\n${result.output}`;
+    return true;
+  }
+  result.content = [{ type: "text", text: tip }];
+  return true;
+}
+
 // ── V2 setup ───────────────────────────────────────────────────────────
 
 export async function createContextModeV2Setup(ctx: V2PluginContext): Promise<() => void> {
@@ -169,6 +229,25 @@ export async function createContextModeV2Setup(ctx: V2PluginContext): Promise<()
     ((globalThis as any)[Symbol.for("context-mode.v2.sessionOwner")] as Map<string, string>) ??
     new Map<string, string>();
   (globalThis as any)[Symbol.for("context-mode.v2.sessionOwner")] = sessionOwnerMap;
+
+  // Tools already nudged per session (once per session per tool, mirroring
+  // routing.mjs's guidanceOnce). Global so plugin reloads keep the state.
+  const nudgedSessions: Map<string, Set<string>> =
+    ((globalThis as any)[Symbol.for("context-mode.v2.nudged")] as Map<string, Set<string>>) ??
+    new Map<string, Set<string>>();
+  (globalThis as any)[Symbol.for("context-mode.v2.nudged")] = nudgedSessions;
+
+  const maybeNudge = (event: V2ToolExecuteAfterEvent): void => {
+    if (process.env.CONTEXT_MODE_V2_NUDGES === "0") return;
+    if (event.status !== "completed" || !event.sessionID) return;
+    if (!NUDGE_TEXTS[event.tool]) return;
+    const seen = nudgedSessions.get(event.sessionID) ?? new Set<string>();
+    if (seen.has(event.tool)) return;
+    if (!applyResultNudge(event.tool, event.result)) return;
+    seen.add(event.tool);
+    nudgedSessions.set(event.sessionID, seen);
+    debug(`nudge: ${event.tool} session=${event.sessionID}`);
+  };
 
   // 1. Load the V1 hooks object - the engine for every OpenCode-family host.
   const clientStub = {
@@ -264,6 +343,13 @@ export async function createContextModeV2Setup(ctx: V2PluginContext): Promise<()
       );
     } catch {
       // capture must never break the tool call (V1 hook is also fail-soft)
+    }
+    // Deliver the routing nudge V1 could not. V2 semantics: a throw inside
+    // execute.after REPLACES the tool result, so fail soft here as well.
+    try {
+      maybeNudge(event);
+    } catch {
+      // nudge must never break the tool call
     }
   });
 
